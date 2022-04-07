@@ -1,12 +1,30 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEditor;
+
+/// <summary>
+/// Класс для работы с пользовательским интерфейсом.
+/// </summary>
 public class GUI : MonoBehaviour
 {
+    /// <summary>
+    /// Поле для ввода размера шва между плитками.
+    /// </summary>
     public InputField Offset;
+
+    /// <summary>
+    /// Поле для ввода угла плиток.
+    /// </summary>
     public InputField Angle;
+
+    /// <summary>
+    /// Поле для ввода смещения плиток.
+    /// </summary>
     public InputField Shift;
 
+    /// <summary>
+    /// Поле для вывода размера площади плиток.
+    /// </summary>
     public Text Result;
 
     public delegate void Notify(int offset, int angle, int shift);

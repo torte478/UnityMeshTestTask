@@ -2,98 +2,64 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+/// <summary>
+/// Класс, отвечающий за решение задачи об укладке плитки.
+/// </summary>
 public class Solver : MonoBehaviour
 {
-    void Start()
+    const float Side = 1;
+    const float BigOffset = 100 * Side;
+
+    private bool[] intersections = new bool[3];
+    private Point[] interPoitns = new Point[3];
+
+    /// <summary>
+    /// Ограничивающая область.
+    /// </summary>
+    public Transform Bounds;
+
+    /// <summary>
+    /// Выполняет укладку плитки и подсчитывает её площадь.
+    /// </summary>
+    /// <param name="offset">Размер шва.</param>
+    /// <param name="angle">Угол наклона.</param>
+    /// <param name="shift">Сдвиг.</param>
+    public float Run(float offset, float angle, float shift)
     {
-        const float StartX = -20;
-        const float StartY = -10;
+        var points = GenerateTilePoints(offset, angle, shift);
+        var cutPoints = SliceBounds(points, angle);
 
-        const float Side = 1;
-        const float Offset = 0.1f;
-        const float Shift = 0.3f;
-        const float Angle = 30; //30;
+        GenerateMeshContent(cutPoints, out var vertices, out var triangles, out var uv);
 
-        const int Height = 20;
-        const int Width = 20;
+        var mesh = GetComponent<MeshFilter>().mesh;
+        mesh.Clear();
+        mesh.vertices = vertices;
+        mesh.triangles = triangles;
+        mesh.uv = uv;
 
-        var zoneA = new Point { X = -6, Y = 4.5f };
-        var zoneB = new Point { X = 6, Y = -4.5f };
+        return CalculateArea(cutPoints);
+    }
 
-        var quaternion = Quaternion.Euler(0, 0, Angle);
-        var tiles = new List<Tile>();
+    /// <summary>
+    /// Подсчет площади используемых плиток.
+    /// </summary>
+    private float CalculateArea(Point[] points)
+    {
+        var area = 0f;
+        for (var i = 0; i < points.Length; i += 3)
+           area += GetTriangleArea(points[i], points[i + 1], points[i + 2]);;
 
-        var points = new List<Point>();
+        return area;
+    }
 
-        for (var i = 0; i < Height; ++i)
-            for (var j = 0; j < Width; ++j)
-            {
-                var x = StartX + i * Shift + j * (Side + Offset);
-                var y = StartY + i * (Side + Offset);
-
-                var tile = new Tile
-                {
-                    A = new Point
-                    {
-                        X = x,
-                        Y = y,
-                        U = 0,
-                        V = 0
-                    },
-                    B = new Point
-                    {
-                        X = x,
-                        Y = y + Side,
-                        U = 0,
-                        V = 1
-                    },
-                    C = new Point
-                    {
-                        X = x + Side,
-                        Y = y + Side,
-                        U = 1,
-                        V = 1
-                    },
-                    D = new Point
-                    {
-                        X = x + Side,
-                        Y = y,
-                        U = 1,
-                        V = 0
-                    }
-                };
-
-                var a = quaternion * new Vector3(tile.A.X, tile.A.Y);
-                tile.A = new Point { X = a.x, Y = a.y, U = tile.A.U, V = tile.A.V };
-
-                var b = quaternion * new Vector3(tile.B.X, tile.B.Y);
-                tile.B = new Point { X = b.x, Y = b.y, U = tile.B.U, V = tile.B.V };
-
-                var c = quaternion * new Vector3(tile.C.X, tile.C.Y);
-                tile.C = new Point { X = c.x, Y = c.y, U = tile.C.U, V = tile.C.V };
-
-                var d = quaternion * new Vector3(tile.D.X, tile.D.Y);
-                tile.D = new Point { X = d.x, Y = d.y, U = tile.D.U, V = tile.D.V };
-                
-                points.Add(tile.A);
-                points.Add(tile.B);
-                points.Add(tile.C);
-
-                points.Add(tile.A);
-                points.Add(tile.C);
-                points.Add(tile.D);
-            }
-
-        IEnumerable<Point> p = points;
-        // p = Slice(p, new Point { X = -100, Y = zoneA.Y }, new Point { X = 100, Y =  zoneA.Y }, true, Angle);
-        // p = Slice(p, new Point { X = -100, Y =  zoneB.Y }, new Point { X = 100, Y =  zoneB.Y }, false, Angle);
-        // p = Slice(p, new Point { X = zoneA.X, Y = 100 }, new Point { X = zoneA.X, Y = -100 }, false, Angle);
-        // p = Slice(p, new Point { X = zoneB.X, Y = 100 }, new Point { X = zoneB.X, Y = -100 }, true, Angle);
-        var result = p.ToArray();
-
-        var vertices = new Vector3[result.Length];
-        var triangles = new int[result.Length];
-        var uv = new Vector2[result.Length];
+    /// <summary>
+    /// Преобразование коллекции точек в данные для генерации Mesh-a.
+    /// </summary>
+    private void GenerateMeshContent(Point[] result, out Vector3[] vertices, out int[] triangles, out Vector2[] uv)
+    {
+        vertices = new Vector3[result.Length];
+        triangles = new int[result.Length];
+        uv = new Vector2[result.Length];
 
         for (var i = 0; i < result.Length; i += 3)
         {
@@ -102,7 +68,7 @@ public class Solver : MonoBehaviour
             vertices[i + 2] = new Vector3(result[i + 2].X, result[i + 2].Y);
 
             triangles[i + 0] = i;
-            if (Clockwise(result[i], result[i + 1], result[i + 2]))
+            if (IsClockwise(result[i], result[i + 1], result[i + 2]))
             {
                 triangles[i + 1] = i + 1;
                 triangles[i + 2] = i + 2;
@@ -117,38 +83,98 @@ public class Solver : MonoBehaviour
             uv[i + 1] = new Vector2(result[i + 1].U, result[i + 1].V);
             uv[i + 2] = new Vector2(result[i + 2].U, result[i + 2].V);
         }
-
-        var mesh = new Mesh();
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
-        mesh.uv = uv;
-
-        GetComponent<MeshFilter>().mesh = mesh;
     }
 
+    /// <summary>
+    /// "Отсекание" плитки за пределами прямоугольной области.
+    /// </summary>
+    private Point[] SliceBounds(IEnumerable<Point> points, float angle)
+    {
+        var vSlice = Bounds.localScale.y / 2;
+        var hSlice = Bounds.localScale.x / 2;
+
+        var res = points;
+        
+        res = Slice(res, new Point(-BigOffset, vSlice   ), new Point(BigOffset, vSlice),     true , angle);
+        res = Slice(res, new Point(-BigOffset, -vSlice  ), new Point(BigOffset, -vSlice),    false, angle);
+
+        res = Slice(res, new Point(-hSlice   , BigOffset), new Point(-hSlice  , -BigOffset), false, angle);
+        res = Slice(res, new Point( hSlice   , BigOffset), new Point( hSlice  , -BigOffset), true , angle);
+
+        return res.ToArray();
+    }
+
+    /// <summary>
+    /// Генерация точек треугольников, которые составляют плитку.
+    /// </summary>
+    private IEnumerable<Point> GenerateTilePoints(float offset, float angle, float shift)
+    {
+        var height = Mathf.RoundToInt(Bounds.localScale.y / (Side + offset) * 2);
+        var width = Mathf.RoundToInt(Bounds.localScale.x / (Side + offset) * 2) + 1;
+
+        var startX = width * (Side + offset) / -2;
+        var startY = height * (Side + offset) / -2;
+
+        var points = new List<Point>();
+        for (var i = 0; i < height; ++i) 
+        {
+            var startJ = i * shift >= Side / 2
+                ? -1
+                : 0;
+
+            for (var j = startJ; j < width; ++j)
+            {
+                var x = startX + i * shift + j * (Side + offset);
+                var y = startY + i * (Side + offset);
+
+                var a = new Point(x,        y       , 0, 0).Rotate(angle);
+                var b = new Point(x,        y + Side, 0, 1).Rotate(angle);
+                var c = new Point(x + Side, y + Side, 1, 1).Rotate(angle);
+                var d = new Point(x + Side, y,        1, 0).Rotate(angle);
+
+                yield return a;
+                yield return b;
+                yield return c;
+
+                yield return a;
+                yield return c;
+                yield return d;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Отсекание точек треугольников с помощью отрезка.
+    /// </summary>
+    /// <param name="points">Последовательность всех точек треугольников.</param>
+    /// <param name="segmentA">Начало отсекающего отрезка.</param>
+    /// <param name="segmentB">Конец отсекающего отрезка.</param>
+    /// <param name="sign">Требуемый знак ориентированной площади.</param>
+    /// <param name="sign">Угол изначального наклона плитки.</param>
     private IEnumerable<Point> Slice(IEnumerable<Point> points, Point segmentA, Point segmentB, bool sign, float angle)
     {
         var enumerator = points.GetEnumerator();
         while (enumerator.MoveNext())
         {
+            // Получаем следующие 3 точки
             var triangleA = enumerator.Current;
             enumerator.MoveNext();
             var triangleB = enumerator.Current;
             enumerator.MoveNext();
             var triangleC = enumerator.Current;
 
-            var intersections = new bool[3];
-            var mids = new Point[3];
-
-            intersections[0] = Intersect(triangleA, triangleB, segmentA, segmentB, out mids[0]);
-            intersections[1] = Intersect(triangleB, triangleC, segmentA, segmentB, out mids[1]);
-            intersections[2] = Intersect(triangleC, triangleA, segmentA, segmentB, out mids[2]);
+            // Ищем пересечение отрезка с каждой из сторон треугольника
+            intersections[0] = TryFindIntersection(triangleA, triangleB, segmentA, segmentB, out interPoitns[0]);
+            intersections[1] = TryFindIntersection(triangleB, triangleC, segmentA, segmentB, out interPoitns[1]);
+            intersections[2] = TryFindIntersection(triangleC, triangleA, segmentA, segmentB, out interPoitns[2]);
 
             var count = intersections.Count(x => x);
 
+            // Если отрезок НЕ пересекает треугольник И лежит с нужной стороны от него,
+            // то оставляем треугольник в исходном виде
             if (count != 2)
             {
-                if (Clockwise(triangleA, segmentA, segmentB) == sign)
+                if (IsClockwise(triangleA, segmentA, segmentB) == sign)
                 {
                     yield return triangleA;
                     yield return triangleB;
@@ -157,44 +183,48 @@ public class Solver : MonoBehaviour
                 continue;
             }
 
+            // Находим вершину 'a', в которой сходятся стороны 'b' и 'c', пересекаемые отрезком
+            // first, second - соответствующие точки пересечения
             Point a, b, c, first, second;
             if (intersections[0] && intersections[2])
             {
                 a = triangleA;
                 b = triangleB;
                 c = triangleC;
-                first = mids[0];
-                second = mids[2];
+                first = interPoitns[0];
+                second = interPoitns[2];
             }
             else if (intersections[0] && intersections[1])
             {
                 a = triangleB;
                 b = triangleA;
                 c = triangleC;
-                first = mids[0];
-                second = mids[1];
+                first = interPoitns[0];
+                second = interPoitns[1];
             }
             else 
             {
                 a = triangleC;
                 b = triangleA;
                 c = triangleB;
-                first = mids[2];
-                second = mids[1];
+                first = interPoitns[2];
+                second = interPoitns[1];
             }
 
-            var rotatedA = Rotate(a, -angle);
-            var rotatedB = Rotate(b, -angle);
-            var rotatedC = Rotate(c, -angle);
-            var rotatedFirst = Rotate(first, -angle);
-            var rotatedSecond = Rotate(second, -angle);
+            // Находим положение точек до поворота и вычисляем uv-координаты для точек пересечения
+            var rotatedA = a.Rotate(-angle);
+            var rotatedB = b.Rotate(-angle);
+            var rotatedC = c.Rotate(-angle);
+            var rotatedFirst = first.Rotate(-angle);
+            var rotatedSecond = second.Rotate(-angle);
 
-            first.U = Bar(rotatedA.x, rotatedB.x, rotatedFirst.x, a.U, b.U);
-            first.V = Bar(rotatedA.y, rotatedB.y, rotatedFirst.y, a.V, b.V);
-            second.U = Bar(rotatedA.x, rotatedC.x, rotatedSecond.x, a.U, c.U);
-            second.V = Bar(rotatedA.y, rotatedC.y, rotatedSecond.y, a.V, c.V);
+            first.U = GetUvCoordinate(rotatedA.X, rotatedB.X, rotatedFirst.X, a.U, b.U);
+            first.V = GetUvCoordinate(rotatedA.Y, rotatedB.Y, rotatedFirst.Y, a.V, b.V);
+            second.U = GetUvCoordinate(rotatedA.X, rotatedC.X, rotatedSecond.X, a.U, c.U);
+            second.V = GetUvCoordinate(rotatedA.Y, rotatedC.Y, rotatedSecond.Y, a.V, c.V);
 
-            if (Clockwise(segmentA, segmentB, a) == sign)
+            // Если вершина 'a' лежит с нужной стороны отрезка, то она будет вершиной нового треугольника
+            if (IsClockwise(segmentA, segmentB, a) == sign)
             {
                 yield return a;
                 yield return first;
@@ -202,6 +232,7 @@ public class Solver : MonoBehaviour
             }
             else
             {
+                // В противном случае разбиваем оставшуюся трапецию на два новых треугольника
                 yield return b;
                 yield return first;
                 yield return second;               
@@ -213,14 +244,10 @@ public class Solver : MonoBehaviour
         }
     }
 
-    Vector3 Rotate(Point p, float angle)
-    {
-        var quaternion = Quaternion.Euler(0, 0, angle);
-
-        return quaternion * new Vector3(p.X, p.Y);
-    }
-
-    private float Bar(float aX, float bX, float midX, float aU, float bU)
+    /// <summary>
+    /// Вычисление UV-координаты для точки, лежащей на отрезке с известными uv-координатами
+    /// </summary>
+    private float GetUvCoordinate(float aX, float bX, float midX, float aU, float bU)
     {
         var dist = Mathf.Abs(aX - bX);
         if (dist < Mathf.Epsilon)
@@ -234,19 +261,35 @@ public class Solver : MonoBehaviour
             shift *= -1;
 
         return aU + shift;
-            
     }
 
-    private float TriangleArea2(Point a, Point b, Point c)
+    /// <summary>
+    /// Возвращает удвоенную ориентированную площадь.
+    /// </summary>
+    private float GetTriangleArea2(Point a, Point b, Point c)
     {
         return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
     }
 
-    private bool Clockwise(Point a, Point b, Point c)
+    /// <summary>
+    /// Возвращает площадь труегольника.
+    /// </summary>
+    private float GetTriangleArea(Point a, Point b, Point c)
     {
-        return TriangleArea2(a, b, c) < 0;
+        return Mathf.Abs(GetTriangleArea2(a, b, c)) / 2f;
     }
 
+    /// <summary>
+    /// Возвращает направление повопрота ориентированной площади.
+    /// </summary>
+    private bool IsClockwise(Point a, Point b, Point c)
+    {
+        return GetTriangleArea2(a, b, c) < 0;
+    }
+
+    /// <summary>
+    /// Проверяет, что отрезки расположены достаточно близко для пересечения.
+    /// </summary>
     private bool Intersect1(float a, float b, float c, float d) {
         if (a > b)
         {
@@ -265,7 +308,10 @@ public class Solver : MonoBehaviour
         return Mathf.Max(a, c) <= Mathf.Min(b, d) + Mathf.Epsilon;
     }
 
-    private bool Intersect(Point a, Point b, Point c, Point d, out Point mid)
+    /// <summary>
+    /// Находит точку пересечения двух отрезков.
+    /// </summary>
+    private bool TryFindIntersection(Point a, Point b, Point c, Point d, out Point mid)
     {
         mid = default;
         if (!Intersect1(a.X, b.X, c.X, d.X) || !Intersect1(a.Y, b.Y, c.Y, d.Y))
@@ -285,29 +331,22 @@ public class Solver : MonoBehaviour
             mid.X = -Det(m.C, m.B, n.C, n.B) / zn;
             mid.Y = -Det(m.A, m.C, n.A, n.C) / zn;
 
-            var equalToAny = mid.Equals(a) || mid.Equals(b) || mid.Equals(c) || mid.Equals(d);
+            var equalToAny = mid.EqualsTo(a) || mid.EqualsTo(b) || mid.EqualsTo(c) || mid.EqualsTo(d);
             return !equalToAny;
         }
     }
 
+    /// <summary>
+    /// Определитель матрицы 2-х линейных уровнений.
+    /// </summary>
     private float Det(float a, float b, float c, float d)
     {
         return a * d - b * c;
     }
 
-    private bool Less(Point a, Point b)
-    {
-        return (a.X < b.X - Mathf.Epsilon)
-            || Mathf.Abs(a.X - b.X) < Mathf.Epsilon
-            || (a.Y < b.Y - Mathf.Epsilon);
-    }
-
-    private bool Betw(float l, float r, float x)
-    {
-        return Mathf.Min(l, r) <= x + Mathf.Epsilon
-            && x <= Mathf.Max(l, r) + Mathf.Epsilon;
-    }
-
+    /// <summary>
+    /// Вспомогательный класс для описания линии по расположенному на ней отрезку.
+    /// </summary>
     private struct Line
     {
         public float A { get; set; }
@@ -320,33 +359,11 @@ public class Solver : MonoBehaviour
             B = q.X - p.X;
             C = -A * p.X - B * p.Y;
         }
-
-        public void Norm()
-        {
-            var z = Mathf.Sqrt(A * A + B * B);
-            if (Mathf.Abs(z) > Mathf.Epsilon)
-            {
-                A /= z;
-                B /= z;
-                C /= z;
-            }
-        }
-
-        public float Dist(Point p)
-        {
-            return A * p.X + B * p.Y + C;
-        }
     }
 
-    private struct Tile
-    {
-        public Point A { get; set; }
-        public Point B { get; set; }
-        public Point C { get; set; }
-        public Point D { get; set; }
-
-    }
-
+    /// <summary>
+    /// Вспомогательный класс 2-мерной точки с uv-координатой
+    /// </summary>
     private struct Point
     {
         public float X { get; set;}
@@ -354,14 +371,44 @@ public class Solver : MonoBehaviour
         public float U { get; set;}
         public float V { get; set;}
 
+        public Point(float x, float y, float u, float v)
+        {
+            X = x;
+            Y = y;
+            U = u;
+            V = v;
+        }
+
+        public Point(float x, float y)
+        {
+            X = x;
+            Y = y;
+            U = V = 0;
+        }
+
         public override string ToString()
         {
             return $"({X}, {Y}, {U}, {V})";
         }
 
-        public bool Equals(Point other)
+        public bool EqualsTo(Point other)
         {
             return Mathf.Abs(X - other.X) < Mathf.Epsilon && Mathf.Abs(Y - other.Y) < Mathf.Epsilon;
+        }
+
+        /// <summary>
+        /// Вращает точку вокруг начала координат.
+        /// </summary>
+        public Point Rotate(float angle)
+        {
+            var rotated = Quaternion.Euler(0, 0, angle) * new Vector3(X, Y);
+            return new Point
+            {
+                X = rotated.x,
+                Y = rotated.y,
+                U = U,
+                V = V
+            };
         }
     }
 }
