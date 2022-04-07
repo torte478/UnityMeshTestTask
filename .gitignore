@@ -3,6 +3,7 @@
 /[Oo]bj/
 /[Bb]uild/
 /[Bb]uilds/
+/[Ll]ogs/
 /Assets/AssetStoreTools*
 .DS_Store
 
@@ -33,3 +34,4 @@ sysinfo.txt
 # Builds
 *.apk
 *.unitypackage
+/Logs
